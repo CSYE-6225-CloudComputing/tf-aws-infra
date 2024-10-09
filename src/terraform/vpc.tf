@@ -5,5 +5,18 @@ resource "aws_vpc" "my_vpc" {
     Name = var.vpc_name
     # Introduce a syntax error
     InvalidTag = "Value"
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
   }
 }
