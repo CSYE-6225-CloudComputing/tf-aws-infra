@@ -4,29 +4,31 @@ on:
   pull_request:
     branches:
       - main
-      
+
 jobs:
   terraform:
     name: 'Terraform'
     runs-on: ubuntu-latest
 
     steps:
-    # Checkout the repository to the GitHub Actions runner
-    - name: Checkout
-      uses: actions/checkout@v4
+      # Checkout the repository to the GitHub Actions runner
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Install the latest version of Terraform CLI and configure the Terraform CLI configuration file with a Terraform Cloud user API token
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      # Setup the required version of Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.2.0  # Set to the version you require
 
-    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
-    - name: Terraform Init
-      run: terraform init
+      # Initialize Terraform
+      - name: Terraform Init
+        run: terraform init -input=false
 
-    # Checks that all Terraform configuration files adhere to a canonical format
-    - name: Terraform Format
-      run: terraform fmt -check
+      # Format Terraform configuration
+      - name: Terraform Format
+        run: terraform fmt -check
 
-    # Validate Terraform file
-    - name: Terraform Validate
-      run: terraform validate
+      # Validate Terraform configuration
+      - name: Terraform Validate
+        run: terraform validate
