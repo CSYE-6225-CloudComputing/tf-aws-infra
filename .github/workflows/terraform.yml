@@ -21,14 +21,17 @@ jobs:
         with:
           terraform_version: 1.2.0  # Set to the version you require
 
-      # Initialize Terraform
+      # Initialize Terraform in the src/terraform directory
       - name: Terraform Init
         run: terraform init -input=false
+        working-directory: src/terraform
 
-      # Format Terraform configuration
+      # Format Terraform configuration in the src/terraform directory
       - name: Terraform Format
-        run: terraform fmt -check
+        run: terraform fmt
+        working-directory: src/terraform
 
-      # Validate Terraform configuration
+      # Validate Terraform configuration in the src/terraform directory
       - name: Terraform Validate
         run: terraform validate
+        working-directory: src/terraform
