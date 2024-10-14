@@ -39,7 +39,7 @@ resource "aws_route_table" "my_public_route_table" {
   route {
     cidr_block = var.public_cidr_routing_table
     gateway_id = aws_internet_gateway.my_gateway.id
-    }
+  }
 
   tags = {
     Name = var.public_routing_table_name
