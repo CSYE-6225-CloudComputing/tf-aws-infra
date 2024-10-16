@@ -28,7 +28,7 @@ jobs:
 
       # Format Terraform configuration in the src/terraform directory
       - name: Terraform Format
-        run: terraform fmt
+        run: terraform fmt -check
         working-directory: src/terraform
 
       # Validate Terraform configuration in the src/terraform directory

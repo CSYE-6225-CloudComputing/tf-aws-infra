@@ -45,3 +45,24 @@ variable "aws_region" {
   description = "This is the name of the current AWS region"
   type        = string
 }
+
+variable "instance_type" {
+  description = "This is the name of the instance type"
+  type        = string
+}
+
+variable "key_name" {
+  description = "This is the key name"
+  type        = string
+}
+
+variable "custom_ami_id" {
+  description = "The custom AMI ID for the EC2 instance."
+  type        = string
+}
+
+variable "application_port" {
+  description = "The port on which the application runs."
+  type        = number
+  default     = 9001
+}
