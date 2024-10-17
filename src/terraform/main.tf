@@ -107,7 +107,7 @@ resource "aws_instance" "my_app_instance" {
   subnet_id                   = aws_subnet.my_public_subnets[0].id     # Public subnet
   vpc_security_group_ids      = [aws_security_group.application_sg.id] # Security group
   associate_public_ip_address = true
-  key_name                    = var.key_name
+  # key_name                    = var.key_name
 
   root_block_device {
     volume_size           = 25
