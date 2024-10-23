@@ -66,3 +66,89 @@ variable "application_port" {
   type        = number
   default     = 9001
 }
+
+
+variable "db_password" {
+  description = "This is the db password."
+  type        = string
+  default     = "root"
+
+}
+
+variable "db_username" {
+  description = "This is the db username."
+  type        = string
+  default     = "root"
+
+}
+
+
+variable "db_name" {
+  description = "This is the db name"
+  type        = string
+  default     = "cloud"
+
+}
+
+variable "db_allocated_storage" {
+  description = "This is the allocated db storage"
+  type        = number
+  default     = 20
+
+}
+
+
+variable "db_engine" {
+  description = "This is the db engine"
+  type        = string
+  default     = "mysql"
+
+}
+
+
+variable "db_instance_class" {
+  description = "This is db instance class"
+  type        = string
+  default     = "db.t3.micro"
+
+}
+
+
+variable "db_engine_version" {
+  description = "This is the version of the database engine."
+  type        = string
+}
+
+
+variable "db_parameter_family" {
+  description = "The family of the DB parameter group"
+  type        = string
+}
+
+
+
+variable "db_public_access" {
+  description = "This is the  publicly_accessible rule"
+  type        = bool
+  default     = false
+
+}
+
+
+variable "db_multiaz" {
+  description = "To Enable Multi-AZ deployment."
+  type        = bool
+  default     = false
+}
+
+variable "instance_vol_type" {
+  description = "This is the Instance Volume Type"
+  type        = string
+  default     = "gp2"
+}
+
+variable "instance_vol_size" {
+  description = "This is the Instance Volume Type"
+  type        = number
+  default     = 50
+}
