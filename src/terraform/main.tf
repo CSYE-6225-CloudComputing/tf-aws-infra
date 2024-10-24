@@ -163,6 +163,7 @@ resource "aws_db_parameter_group" "parameter_group" {
 
 
 resource "aws_db_instance" "rds_instance" {
+  identifier             = var.db_identifier
   allocated_storage      = var.db_allocated_storage
   engine                 = var.db_engine
   engine_version         = var.db_engine_version
@@ -177,6 +178,7 @@ resource "aws_db_instance" "rds_instance" {
   parameter_group_name   = aws_db_parameter_group.parameter_group.name
   skip_final_snapshot    = true
 
+
   tags = {
     Name = "MyRDSInstance"
   }
@@ -189,7 +191,7 @@ resource "aws_instance" "my_app_instance" {
   subnet_id                   = aws_subnet.my_public_subnets[0].id     # Public subnet
   vpc_security_group_ids      = [aws_security_group.application_sg.id] # Security group
   associate_public_ip_address = true
-  key_name                    = var.key_name
+  # key_name                    = var.key_name
 
   ebs_block_device {
     device_name           = "/dev/xvda"
@@ -200,13 +202,15 @@ resource "aws_instance" "my_app_instance" {
 
   user_data = <<EOF
 #!/bin/bash
+sudo systemctl stop csye6225.service
 echo "# App Environment Variables"
 echo "DB_URL=jdbc:mysql://${aws_db_instance.rds_instance.address}:3306/${var.db_name}" >> /etc/environment
 echo "DB_USERNAME=${var.db_username}" >> /etc/environment
 echo "DB_PASSWORD=${var.db_password}" >> /etc/environment
 
+sudo systemctl daemon-reload
 sudo systemctl start csye6225.service
-sudo systemctl enable csye6225.service
+
 echo 'Checking status of csye6225 service...'
 sudo systemctl status csye6225.service
 sudo journalctl -xeu csye6225.service
@@ -216,4 +220,3 @@ EOF
   }
   depends_on = [aws_db_instance.rds_instance]
 }
-

@@ -152,3 +152,9 @@ variable "instance_vol_size" {
   type        = number
   default     = 50
 }
+
+variable "db_identifier" {
+  description = "DB IDENTIFIER"
+  type        = string
+  default     = "csye6225"
+}
