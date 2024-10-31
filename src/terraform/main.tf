@@ -147,7 +147,7 @@ resource "aws_db_subnet_group" "my_db_subnet_group" {
 
 resource "aws_db_parameter_group" "parameter_group" {
   name        = "custom-db-parameter-group"
-  family      = var.db_parameter_family # Define the DB family (e.g., mysql8.0, postgres13, etc.)
+  family      = var.db_parameter_family
   description = "Custom parameter group for ${var.db_engine} ${var.db_engine_version}"
 
 
@@ -184,6 +184,148 @@ resource "aws_db_instance" "rds_instance" {
   }
 }
 
+resource "aws_s3_bucket" "my_private_bucket" {
+  bucket        = uuid()
+  force_destroy = true
+
+  tags = {
+    Name = "MyS3PrivateBucket"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "encrypt" {
+  bucket = aws_s3_bucket.my_private_bucket.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "bucket_lifecycle" {
+  bucket = aws_s3_bucket.my_private_bucket.id
+
+  rule {
+    id     = "TransitionToIA"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+
+
+  }
+}
+
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2_s3_access_role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+        Effect = "Allow"
+        Sid    = ""
+      },
+    ]
+  })
+}
+
+
+resource "aws_iam_policy" "s3_access_policy" {
+  name        = "S3AccessPolicy"
+  description = "Policy to allow EC2 access to the S3 bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "${aws_s3_bucket.my_private_bucket.arn}/*", # Access to objects in the bucket
+          aws_s3_bucket.my_private_bucket.arn         # Access to the bucket itself
+        ]
+      }
+    ]
+  })
+}
+
+
+resource "aws_iam_role_policy_attachment" "attach_s3_policy_to_ec2_role" {
+  policy_arn = aws_iam_policy.s3_access_policy.arn
+  role       = aws_iam_role.ec2_role.name
+}
+
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  role = aws_iam_role.ec2_role.name
+}
+
+
+data "aws_route53_zone" "domain" {
+  name = var.aws_route53_domain
+}
+
+resource "aws_route53_record" "subdomain_a_record" {
+  zone_id = data.aws_route53_zone.domain.id
+  name    = data.aws_route53_zone.domain.name
+  type    = "A"
+  ttl     = 60
+  records = [aws_instance.my_app_instance.public_ip]
+}
+
+
+resource "aws_iam_policy" "custom_cloudwatch_agent_policy" {
+  name        = "CloudWatchAgentServerPolicy"
+  description = "IAM Policy for CloudWatch Agent permissions"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "CWACloudWatchServerPermissions"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeTags",
+          "logs:PutLogEvents",
+          "logs:PutRetentionPolicy",
+          "logs:DescribeLogStreams",
+          "logs:DescribeLogGroups",
+          "logs:CreateLogStream",
+          "logs:CreateLogGroup"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "CWASSMServerPermissions"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter"
+        ]
+        Resource = "arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*"
+      }
+    ]
+  })
+}
+
+
+resource "aws_iam_role_policy_attachment" "custom_cloudwatch_agent_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.custom_cloudwatch_agent_policy.arn
+}
+
 
 resource "aws_instance" "my_app_instance" {
   ami                         = var.custom_ami_id # Custom AMI ID
@@ -192,6 +334,8 @@ resource "aws_instance" "my_app_instance" {
   vpc_security_group_ids      = [aws_security_group.application_sg.id] # Security group
   associate_public_ip_address = true
   # key_name                    = var.key_name
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+
 
   ebs_block_device {
     device_name           = "/dev/xvda"
@@ -203,20 +347,26 @@ resource "aws_instance" "my_app_instance" {
   user_data = <<EOF
 #!/bin/bash
 sudo systemctl stop csye6225.service
+sudo systemctl stop amazon-cloudwatch-agent
 echo "# App Environment Variables"
 echo "DB_URL=jdbc:mysql://${aws_db_instance.rds_instance.address}:3306/${var.db_name}" >> /etc/environment
 echo "DB_USERNAME=${var.db_username}" >> /etc/environment
 echo "DB_PASSWORD=${var.db_password}" >> /etc/environment
+echo "AWS_S3_BUCKET_NAME=${aws_s3_bucket.my_private_bucket.id}" >> /etc/environment
+echo "AWS_S3_REGION=${var.aws_region}" >> /etc/environment
 
 sudo systemctl daemon-reload
 sudo systemctl start csye6225.service
+sudo systemctl enable amazon-cloudwatch-agent
+
+sudo systemctl start amazon-cloudwatch-agent
 
 echo 'Checking status of csye6225 service...'
 sudo systemctl status csye6225.service
 sudo journalctl -xeu csye6225.service
 EOF
   tags = {
-    "Name" = "myappinstance"
+    "Name" = "mycloudinstance"
   }
   depends_on = [aws_db_instance.rds_instance]
 }
