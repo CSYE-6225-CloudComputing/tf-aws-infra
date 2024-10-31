@@ -115,13 +115,13 @@ variable "db_instance_class" {
 
 
 variable "db_engine_version" {
-  description = "This is the version of the database engine."
+  description = "The version of the database engine to use for the RDS instance."
   type        = string
 }
 
 
 variable "db_parameter_family" {
-  description = "The family of the DB parameter group"
+  description = "The family of the DB parameter group, depending on the engine (mysql8.0, postgres13, etc.)."
   type        = string
 }
 
@@ -136,25 +136,33 @@ variable "db_public_access" {
 
 
 variable "db_multiaz" {
-  description = "To Enable Multi-AZ deployment."
+  description = "Enable Multi-AZ deployment for the RDS instance."
   type        = bool
   default     = false
 }
 
 variable "instance_vol_type" {
-  description = "This is the Instance Volume Type"
+  description = "Instance Volume Type"
   type        = string
   default     = "gp2"
 }
 
 variable "instance_vol_size" {
-  description = "This is the Instance Volume Type"
+  description = "Instance Volume Type"
   type        = number
   default     = 50
 }
+
 
 variable "db_identifier" {
   description = "DB IDENTIFIER"
   type        = string
   default     = "csye6225"
+}
+
+
+variable "aws_route53_domain" {
+  description = "Domain for aws"
+  type        = string
+  default     = "dev.manalicloud.me"
 }
