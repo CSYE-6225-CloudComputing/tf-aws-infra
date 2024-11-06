@@ -460,7 +460,6 @@ resource "aws_launch_template" "csye6225_launch_template" {
   name          = "csye6225_asg"
   image_id      = var.custom_ami_id
   instance_type = var.instance_type
-  key_name      = var.key_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name

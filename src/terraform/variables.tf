@@ -51,10 +51,6 @@ variable "instance_type" {
   type        = string
 }
 
-variable "key_name" {
-  description = "This is the key name"
-  type        = string
-}
 
 variable "custom_ami_id" {
   description = "The custom AMI ID for the EC2 instance."
