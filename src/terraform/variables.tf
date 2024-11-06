@@ -160,9 +160,79 @@ variable "db_identifier" {
   default     = "csye6225"
 }
 
-
 variable "aws_route53_domain" {
-  description = "Domain for aws"
+  description = "This is route53 domain"
   type        = string
   default     = "dev.manalicloud.me"
+}
+
+
+
+variable "min_instance_size" {
+  description = "This is min instance size"
+  type        = number
+  default     = 3
+}
+
+
+variable "max_instance_size" {
+  description = "This is max instance"
+  type        = number
+  default     = 5
+}
+
+
+variable "desired_capacity" {
+  description = "This is desired_capacity"
+  type        = number
+  default     = 3
+}
+
+variable "threshold_up" {
+  description = "This is threshold for upscaling"
+  type        = number
+  default     = 7
+}
+
+
+variable "threshold_down" {
+  description = "This is threshold for downscaling"
+  type        = number
+  default     = 6
+}
+
+variable "metric_name" {
+  description = "This is metric name"
+  type        = string
+  default     = "CPUUtilization"
+}
+
+variable "health_check_interval" {
+  description = "This is health_check_interval name"
+  type        = number
+  default     = 30
+}
+
+variable "scaling_adjustment_down" {
+  description = "This is scaling_adjustment_down"
+  type        = number
+  default     = -1
+}
+
+variable "scaling_adjustment_up" {
+  description = "This is scaling_adjustment_up"
+  type        = number
+  default     = 1
+}
+
+variable "cooldown_period" {
+  description = "This is cooling down period"
+  type        = number
+  default     = 60
+}
+
+variable "adjustment_type" {
+  description = "This is adjustment_type name"
+  type        = string
+  default     = "ChangeInCapacity"
 }
