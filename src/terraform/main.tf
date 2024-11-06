@@ -63,50 +63,7 @@ resource "aws_route_table_association" "private_route_table_subnets_association"
   route_table_id = aws_route_table.my_private_route_table.id
 }
 
-resource "aws_security_group" "application_sg" {
-  name        = "application_sg"
-  description = "This is the Security group for application instances"
-  vpc_id      = aws_vpc.my_vpc.id
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = var.application_port
-    to_port     = var.application_port
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "Application Security Group"
-  }
-}
 
 resource "aws_security_group" "db_sg" {
   name        = "db_security_group"
@@ -278,11 +235,15 @@ data "aws_route53_zone" "domain" {
 }
 
 resource "aws_route53_record" "subdomain_a_record" {
-  zone_id = data.aws_route53_zone.domain.id
+  zone_id = data.aws_route53_zone.domain.zone_id
   name    = data.aws_route53_zone.domain.name
   type    = "A"
-  ttl     = 60
-  records = [aws_instance.my_app_instance.public_ip]
+  alias {
+    name                   = aws_lb.my_lb.dns_name
+    zone_id                = aws_lb.my_lb.zone_id
+    evaluate_target_health = true
+  }
+
 }
 
 
@@ -327,24 +288,190 @@ resource "aws_iam_role_policy_attachment" "custom_cloudwatch_agent_policy_attach
 }
 
 
-resource "aws_instance" "my_app_instance" {
-  ami                         = var.custom_ami_id # Custom AMI ID
-  instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.my_public_subnets[0].id     # Public subnet
-  vpc_security_group_ids      = [aws_security_group.application_sg.id] # Security group
-  associate_public_ip_address = true
-  # key_name                    = var.key_name
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+# Define the IAM Policy for Auto Scaling
+resource "aws_iam_policy" "custom_autoscaling_policy" {
+  name        = "AutoScalingPolicy"
+  description = "IAM Policy for Auto Scaling permissions without CloudWatch"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AutoScalingEC2Permissions"
+        Effect = "Allow"
+        Action = [
+          "autoscaling:AttachInstances",
+          "autoscaling:DetachInstances",
+          "autoscaling:SetDesiredCapacity",
+          "autoscaling:UpdateAutoScalingGroup",
+          "autoscaling:DescribeAutoScalingGroups",
+          "autoscaling:DescribeAutoScalingInstances",
+          "autoscaling:DescribeLaunchConfigurations",
+          "ec2:DescribeInstances",
+          "ec2:RunInstances"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
 
 
-  ebs_block_device {
-    device_name           = "/dev/xvda"
-    volume_type           = var.instance_vol_type
-    volume_size           = var.instance_vol_size
-    delete_on_termination = true
+resource "aws_iam_role" "autoscaling_role" {
+  name = "AutoScalingRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "autoscaling.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+# Attach the custom Auto Scaling policy to the role
+resource "aws_iam_role_policy_attachment" "attach_autoscaling_policy" {
+  role       = aws_iam_role.autoscaling_role.name
+  policy_arn = aws_iam_policy.custom_autoscaling_policy.arn
+}
+
+
+resource "aws_security_group" "lb_sg" {
+  name        = "load_balancer_sg"
+  description = "Security group for Load Balancer"
+  vpc_id      = aws_vpc.my_vpc.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  user_data = <<EOF
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "LoadBalancerSecurityGroup"
+  }
+}
+
+resource "aws_security_group" "application_sg" {
+  name        = "application_sg"
+  description = "This is the Security group for application instances"
+  vpc_id      = aws_vpc.my_vpc.id
+
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id]
+  }
+
+  ingress {
+    from_port       = var.application_port
+    to_port         = var.application_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "Application Security Group"
+  }
+}
+
+
+# Load Balancer configuration
+resource "aws_lb" "my_lb" {
+  name               = "my-load-balancer"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.lb_sg.id]
+  subnets            = aws_subnet.my_public_subnets.*.id
+
+  enable_deletion_protection = false
+}
+
+
+
+resource "aws_lb_target_group" "app_target_group" {
+  name        = "app-target-group"
+  port        = var.application_port
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.my_vpc.id
+  target_type = "instance"
+
+  health_check {
+    path                = "/healthz"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = var.health_check_interval
+    timeout             = 5
+    healthy_threshold   = 3
+    unhealthy_threshold = 5
+    port                = var.application_port
+  }
+
+  tags = {
+    Name = "WebAppTargetGroup"
+  }
+}
+
+
+# Listener for Load Balancer
+resource "aws_lb_listener" "http_listener" {
+  load_balancer_arn = aws_lb.my_lb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_target_group.arn
+  }
+}
+
+
+
+resource "aws_launch_template" "csye6225_launch_template" {
+  depends_on    = [aws_db_instance.rds_instance]
+  name          = "csye6225_asg"
+  image_id      = var.custom_ami_id
+  instance_type = var.instance_type
+  key_name      = var.key_name
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_profile.name
+  }
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.application_sg.id]
+  }
+
+  user_data = base64encode(<<EOF
 #!/bin/bash
 sudo systemctl stop csye6225.service
 sudo systemctl stop amazon-cloudwatch-agent
@@ -358,15 +485,81 @@ echo "AWS_S3_REGION=${var.aws_region}" >> /etc/environment
 sudo systemctl daemon-reload
 sudo systemctl start csye6225.service
 sudo systemctl enable amazon-cloudwatch-agent
-
 sudo systemctl start amazon-cloudwatch-agent
 
 echo 'Checking status of csye6225 service...'
 sudo systemctl status csye6225.service
 sudo journalctl -xeu csye6225.service
 EOF
-  tags = {
-    "Name" = "mycloudinstance"
+  )
+}
+
+
+resource "aws_autoscaling_group" "webapp_asg" {
+  launch_template {
+    id      = aws_launch_template.csye6225_launch_template.id
+    version = aws_launch_template.csye6225_launch_template.latest_version
   }
-  depends_on = [aws_db_instance.rds_instance]
+
+  min_size                  = var.min_instance_size
+  max_size                  = var.max_instance_size
+  desired_capacity          = var.desired_capacity
+  vpc_zone_identifier       = [for subnet in aws_subnet.my_public_subnets : subnet.id] # Attach ASG to public subnets
+  target_group_arns         = ["${aws_lb_target_group.app_target_group.arn}"]
+  health_check_type         = "EC2"
+  health_check_grace_period = 300
+  default_cooldown          = 60
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+}
+
+
+resource "aws_autoscaling_policy" "scale_up_policy" {
+  name                   = "scale_up_on_cpu"
+  scaling_adjustment     = var.scaling_adjustment_up
+  adjustment_type        = var.adjustment_type
+  cooldown               = var.cooldown_period
+  autoscaling_group_name = aws_autoscaling_group.webapp_asg.name
+}
+
+resource "aws_autoscaling_policy" "scale_down_policy" {
+  name                   = "scale_down_on_cpu"
+  scaling_adjustment     = var.scaling_adjustment_down
+  adjustment_type        = var.adjustment_type
+  cooldown               = var.cooldown_period
+  autoscaling_group_name = aws_autoscaling_group.webapp_asg.name
+}
+
+
+resource "aws_cloudwatch_metric_alarm" "scale_up_alarm" {
+  alarm_name          = "scale_up_alarm"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = var.metric_name
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Average"
+  threshold           = var.threshold_up
+  alarm_actions       = [aws_autoscaling_policy.scale_up_policy.arn]
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.webapp_asg.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
+  alarm_name          = "scale_down_alarm"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = var.metric_name
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Average"
+  threshold           = var.threshold_down
+  alarm_actions       = [aws_autoscaling_policy.scale_down_policy.arn]
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.webapp_asg.name
+  }
 }
