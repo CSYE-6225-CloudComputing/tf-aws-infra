@@ -232,3 +232,37 @@ variable "adjustment_type" {
   type        = string
   default     = "ChangeInCapacity"
 }
+
+
+variable "mailgundomain" {
+  description = "This is mailgundomain"
+  type        = string
+  default     = "dev.manalicloud.me"
+}
+
+
+variable "launchTemplateName" {
+  description = "This is launch template name"
+  type        = string
+  default     = "csye6225_template"
+}
+
+
+variable "autoScalingGroupName" {
+  description = "This is autoscaling_group_name"
+  type        = string
+  default     = "csye6225_asg"
+}
+
+
+variable "mailgunapikey" {
+  description = "This is mailgunapikey"
+  type        = string
+  default     = "1f026566bdded4259441d55703162188-79295dd0-5fd56a72"
+}
+
+variable "filename" {
+  description = "This is filename"
+  type        = string
+  default     = "lambda-function-1.0-SNAPSHOT.jar"
+}

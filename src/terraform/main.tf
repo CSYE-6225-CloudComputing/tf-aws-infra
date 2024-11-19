@@ -141,8 +141,10 @@ resource "aws_db_instance" "rds_instance" {
   }
 }
 
+resource "random_uuid" "bucket_name" {}
+
 resource "aws_s3_bucket" "my_private_bucket" {
-  bucket        = uuid()
+  bucket        = random_uuid.bucket_name.result
   force_destroy = true
 
   tags = {
@@ -347,17 +349,19 @@ resource "aws_security_group" "lb_sg" {
   vpc_id      = aws_vpc.my_vpc.id
 
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port        = 80
+    to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
   }
 
   ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
   }
 
   egress {
@@ -457,7 +461,7 @@ resource "aws_lb_listener" "http_listener" {
 
 resource "aws_launch_template" "csye6225_launch_template" {
   depends_on    = [aws_db_instance.rds_instance]
-  name          = "csye6225_asg"
+  name          = var.launchTemplateName
   image_id      = var.custom_ami_id
   instance_type = var.instance_type
 
@@ -480,6 +484,8 @@ echo "DB_USERNAME=${var.db_username}" >> /etc/environment
 echo "DB_PASSWORD=${var.db_password}" >> /etc/environment
 echo "AWS_S3_BUCKET_NAME=${aws_s3_bucket.my_private_bucket.id}" >> /etc/environment
 echo "AWS_S3_REGION=${var.aws_region}" >> /etc/environment
+echo "AWS_SNS_ARN=${aws_sns_topic.sns_topic.arn}" >> /etc/environment
+echo "DOMAIN_NAME=${var.aws_route53_domain}" >> /etc/environment
 
 sudo systemctl daemon-reload
 sudo systemctl start csye6225.service
@@ -495,6 +501,8 @@ EOF
 
 
 resource "aws_autoscaling_group" "webapp_asg" {
+
+  name = var.autoScalingGroupName
   launch_template {
     id      = aws_launch_template.csye6225_launch_template.id
     version = aws_launch_template.csye6225_launch_template.latest_version
@@ -561,4 +569,179 @@ resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.webapp_asg.name
   }
+}
+
+
+# Lambda Execution Role
+resource "aws_iam_role" "lambda_role" {
+  name = "sns_lambda_execution_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "lambda_policy" {
+  name        = "sns_lambda_policy"
+  description = "Policy for Lambda to access SNS and cloudwatch"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "sns:Publish",
+          "sns:Subscribe",
+          "sns:ListSubscriptions",
+          "sns:ListSubscriptionsByTopic"
+        ]
+        Effect = "Allow"
+        Resource = [
+          "${aws_sns_topic.sns_topic.arn}",
+        ]
+      },
+      {
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams",
+          "logs:DescribeLogGroups",
+          "logs:CreateLogGroup"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+
+# Attach Lambda execution policy to the role
+resource "aws_iam_role_policy_attachment" "lambda_policy_attachment" {
+  policy_arn = aws_iam_policy.lambda_policy.arn
+  role       = aws_iam_role.lambda_role.name
+}
+
+# Lambda Function
+resource "aws_lambda_function" "sns_lambda" {
+  function_name = "sns_lambda_function"
+
+  role        = aws_iam_role.lambda_role.arn
+  handler     = "awslambda.SnsLambdaFunction::handleRequest"
+  runtime     = "java21"
+  memory_size = 512
+  timeout     = 60
+  filename    = var.filename
+
+  environment {
+    variables = {
+      MAIL_GUN_API_KEY     = var.mailgunapikey
+      MAIL_GUN_DOMAIN_NAME = var.mailgundomain
+    }
+  }
+}
+
+# SNS Topic
+resource "aws_sns_topic" "sns_topic" {
+  name = "email_request_topic"
+}
+
+# SNS Subscription for Lambda
+resource "aws_sns_topic_subscription" "sns_lambda_subscription" {
+  topic_arn = aws_sns_topic.sns_topic.arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.sns_lambda.arn
+}
+
+
+data "aws_caller_identity" "current" {}
+
+locals {
+  aws_user_account_id = data.aws_caller_identity.current.account_id
+}
+
+
+data "aws_iam_policy_document" "sns-topic-policy" {
+  policy_id = "__default_policy_ID"
+
+  statement {
+    actions = [
+      "SNS:Subscribe",
+      "SNS:SetTopicAttributes",
+      "SNS:RemovePermission",
+      "SNS:Receive",
+      "SNS:Publish",
+      "SNS:ListSubscriptionsByTopic",
+      "SNS:GetTopicAttributes",
+      "SNS:DeleteTopic",
+      "SNS:AddPermission",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceOwner"
+
+      values = [
+        "${local.aws_user_account_id}",
+      ]
+    }
+
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    resources = [
+      "${aws_sns_topic.sns_topic.arn}",
+    ]
+
+    sid = "__default_statement_ID"
+  }
+}
+
+
+# IAM policy for SNS
+resource "aws_iam_policy" "sns_iam_policy" {
+  name   = "ec2_iam_policy"
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "SNS:Publish"
+      ],
+      "Resource": "${aws_sns_topic.sns_topic.arn}"
+    }
+  ]
+}
+EOF
+}
+
+# Attach the SNS topic policy to the EC2 role
+resource "aws_iam_role_policy_attachment" "ec2_instance_sns" {
+  policy_arn = aws_iam_policy.sns_iam_policy.arn
+  role       = aws_iam_role.ec2_role.name
+}
+
+
+# Allow SNS to invoke the Lambda function
+resource "aws_lambda_permission" "sns_lambda_permission" {
+  statement_id  = "AllowSNSInvokeLambda"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.sns_lambda.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.sns_topic.arn
 }
