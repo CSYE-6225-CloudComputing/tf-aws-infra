@@ -261,6 +261,8 @@ variable "mailgunapikey" {
   default     = "1f026566bdded4259441d55703162188-79295dd0-5fd56a72"
 }
 
-
-
-
+variable "filename" {
+  description = "This is filename"
+  type        = string
+  default     = "lambda-function-1.0-SNAPSHOT.jar"
+}

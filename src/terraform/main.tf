@@ -141,8 +141,10 @@ resource "aws_db_instance" "rds_instance" {
   }
 }
 
+resource "random_uuid" "bucket_name" {}
+
 resource "aws_s3_bucket" "my_private_bucket" {
-  bucket        = uuid()
+  bucket        = random_uuid.bucket_name.result
   force_destroy = true
 
   tags = {
@@ -638,7 +640,7 @@ resource "aws_lambda_function" "sns_lambda" {
   runtime     = "java21"
   memory_size = 512
   timeout     = 60
-  filename    = "lambda-function-1.0-SNAPSHOT.jar"
+  filename    = var.filename
 
   environment {
     variables = {
