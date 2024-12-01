@@ -118,7 +118,15 @@ resource "aws_db_parameter_group" "parameter_group" {
   }
 }
 
+# Generate Random Password for RDS
+resource "random_password" "db_password" {
+  length           = 16
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
 
+
+# RDS Instance with KMS Key
 resource "aws_db_instance" "rds_instance" {
   identifier             = var.db_identifier
   allocated_storage      = var.db_allocated_storage
@@ -127,19 +135,21 @@ resource "aws_db_instance" "rds_instance" {
   instance_class         = var.db_instance_class
   db_name                = var.db_name
   username               = var.db_username
-  password               = var.db_password
+  password               = random_password.db_password.result
   db_subnet_group_name   = aws_db_subnet_group.my_db_subnet_group.name
   vpc_security_group_ids = [aws_security_group.db_sg.id]
   publicly_accessible    = var.db_public_access
   multi_az               = var.db_multiaz
   parameter_group_name   = aws_db_parameter_group.parameter_group.name
   skip_final_snapshot    = true
-
+  storage_encrypted      = true
+  kms_key_id             = aws_kms_key.rds_kms_key.arn
 
   tags = {
     Name = "MyRDSInstance"
   }
 }
+
 
 resource "random_uuid" "bucket_name" {}
 
@@ -152,15 +162,18 @@ resource "aws_s3_bucket" "my_private_bucket" {
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "encrypt" {
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "s3_bucket_encryption" {
   bucket = aws_s3_bucket.my_private_bucket.id
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.s3_kms_key.id
     }
   }
 }
+
 
 resource "aws_s3_bucket_lifecycle_configuration" "bucket_lifecycle" {
   bucket = aws_s3_bucket.my_private_bucket.id
@@ -196,35 +209,46 @@ resource "aws_iam_role" "ec2_role" {
 }
 
 
-resource "aws_iam_policy" "s3_access_policy" {
-  name        = "S3AccessPolicy"
-  description = "Policy to allow EC2 access to the S3 bucket"
+resource "aws_iam_policy" "s3_kms_access_policy" {
+  name        = "S3KMSAccessPolicy"
+  description = "Policy for EC2 instance to access S3 and use KMS encryption"
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
+        Sid    = "AllowS3Actions",
+        Effect = "Allow",
         Action = [
           "s3:GetObject",
           "s3:PutObject",
           "s3:DeleteObject",
           "s3:ListBucket"
-        ]
+        ],
         Resource = [
-          "${aws_s3_bucket.my_private_bucket.arn}/*", # Access to objects in the bucket
-          aws_s3_bucket.my_private_bucket.arn         # Access to the bucket itself
+          "${aws_s3_bucket.my_private_bucket.arn}",
+          "${aws_s3_bucket.my_private_bucket.arn}/*"
         ]
+      },
+      {
+        Sid    = "AllowKMSActionsForS3",
+        Effect = "Allow",
+        Action = [
+          "kms:GenerateDataKey",
+          "kms:Decrypt",
+          "kms:DescribeKey"
+        ],
+        Resource = aws_kms_key.s3_kms_key.arn
       }
     ]
   })
 }
 
-
-resource "aws_iam_role_policy_attachment" "attach_s3_policy_to_ec2_role" {
-  policy_arn = aws_iam_policy.s3_access_policy.arn
+resource "aws_iam_role_policy_attachment" "s3_kms_policy_attachment" {
   role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.s3_kms_access_policy.arn
 }
+
 
 
 resource "aws_iam_instance_profile" "ec2_profile" {
@@ -447,26 +471,28 @@ resource "aws_lb_target_group" "app_target_group" {
   }
 }
 
-
-# Listener for Load Balancer
-resource "aws_lb_listener" "http_listener" {
-  load_balancer_arn = aws_lb.my_lb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app_target_group.arn
-  }
+data "aws_secretsmanager_secret_version" "db_password_version" {
+  secret_id  = aws_secretsmanager_secret.db_password_secret.id
+  depends_on = [aws_secretsmanager_secret_version.db_password_version]
 }
 
 
 
 resource "aws_launch_template" "csye6225_launch_template" {
-  depends_on    = [aws_db_instance.rds_instance]
   name          = var.launchTemplateName
   image_id      = var.custom_ami_id
   instance_type = var.instance_type
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size = var.root_volume_size
+      volume_type = var.volume_type
+      encrypted   = true
+      kms_key_id  = aws_kms_key.ec2_kms_key.arn
+    }
+  }
+
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
@@ -477,31 +503,53 @@ resource "aws_launch_template" "csye6225_launch_template" {
     security_groups             = [aws_security_group.application_sg.id]
   }
 
+
+
   user_data = base64encode(<<EOF
 #!/bin/bash
+
 sudo systemctl stop csye6225.service
 sudo systemctl stop amazon-cloudwatch-agent
-echo "# App Environment Variables"
+
+# Install dependencies
+sudo apt-get update
+sudo apt-get install -y jq
+
+DB_PASSWORD=$(echo '${data.aws_secretsmanager_secret_version.db_password_version.secret_string}' | jq -r .password)
+
+#DB_PASSWORD = jsondecode(aws_secretsmanager_secret_version.db_password_version.secret_string).password
+
+if [[ $? -ne 0 ]]; then
+  echo "Failed to fetch database password" >> /var/log/user-data_2.log
+  exit 1
+fi
+
+if [[ -n "$DB_PASSWORD" ]]; then
+  echo "Database password fetched successfully: $DB_PASSWORD" >> /var/log/user-data_2.log
+else
+  echo "Database password is empty" >> /var/log/user-data.log
+fi
+
+# Configure environment variables
 echo "DB_URL=jdbc:mysql://${aws_db_instance.rds_instance.address}:3306/${var.db_name}" >> /etc/environment
 echo "DB_USERNAME=${var.db_username}" >> /etc/environment
-echo "DB_PASSWORD=${var.db_password}" >> /etc/environment
-echo "AWS_S3_BUCKET_NAME=${aws_s3_bucket.my_private_bucket.id}" >> /etc/environment
+echo "DB_PASSWORD=$DB_PASSWORD" >> /etc/environment
+echo "AWS_S3_BUCKET_NAME=${aws_s3_bucket.my_private_bucket.bucket}" >> /etc/environment
 echo "AWS_S3_REGION=${var.aws_region}" >> /etc/environment
 echo "AWS_SNS_ARN=${aws_sns_topic.sns_topic.arn}" >> /etc/environment
 echo "DOMAIN_NAME=${var.aws_route53_domain}" >> /etc/environment
 
+# Reload environment
+source /etc/environment
+
+# Start application
 sudo systemctl daemon-reload
 sudo systemctl start csye6225.service
 sudo systemctl enable amazon-cloudwatch-agent
 sudo systemctl start amazon-cloudwatch-agent
-
-echo 'Checking status of csye6225 service...'
-sudo systemctl status csye6225.service
-sudo journalctl -xeu csye6225.service
 EOF
   )
 }
-
 
 resource "aws_autoscaling_group" "webapp_asg" {
 
@@ -647,8 +695,7 @@ resource "aws_lambda_function" "sns_lambda" {
 
   environment {
     variables = {
-      MAIL_GUN_API_KEY     = var.mailgunapikey
-      MAIL_GUN_DOMAIN_NAME = var.mailgundomain
+      EMAIL_CREDENTIALS_SECRET_NAME = var.email_credentials_name
     }
   }
 }
@@ -748,3 +795,30 @@ resource "aws_lambda_permission" "sns_lambda_permission" {
   principal     = "sns.amazonaws.com"
   source_arn    = aws_sns_topic.sns_topic.arn
 }
+
+data "aws_acm_certificate" "dev_ssl_certificate" {
+  domain      = var.aws_route53_domain
+  most_recent = true
+  statuses    = ["ISSUED"]
+}
+
+output "fetched_certificate_arn" {
+  value = data.aws_acm_certificate.dev_ssl_certificate.arn
+}
+
+
+
+resource "aws_lb_listener" "https_listener" {
+  load_balancer_arn = aws_lb.my_lb.arn
+  port              = 443
+  protocol          = "HTTPS"
+
+  ssl_policy      = "ELBSecurityPolicy-2016-08"
+  certificate_arn = data.aws_acm_certificate.dev_ssl_certificate.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_target_group.arn
+  }
+}
+

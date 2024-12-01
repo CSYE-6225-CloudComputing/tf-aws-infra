@@ -266,3 +266,27 @@ variable "filename" {
   type        = string
   default     = "lambda-function-1.0-SNAPSHOT.jar"
 }
+
+variable "root_volume_size" {
+  default     = 50 # Size of the root volume in GB
+  description = "The size of the root EBS volume."
+}
+
+variable "volume_type" {
+  default     = "gp2" # General-purpose SSD (gp2 or gp3)
+  description = "The type of EBS volume."
+}
+
+variable "email_credentials_name" {
+  description = "The name of the email credentials secret in Secrets Manager"
+  type        = string
+  default     = "email-service-credentials-august"
+}
+
+
+variable "db_password_secret" {
+  description = "The name of the db secret in Secrets Manager"
+  type        = string
+}
+
+
