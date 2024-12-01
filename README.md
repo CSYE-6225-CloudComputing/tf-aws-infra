@@ -47,9 +47,9 @@ aws acm import-certificate --certificate fileb://certificate.pem \
 ```
 
 Replace:
-- `certificate.pem` with the path to your certificate file
-- `private_key.pem` with the path to your private key file
-- `certificate_chain.pem` with the path to your certificate chain file
+- `certificate.pem` with the path to your certificate file.
+- `private_key.pem` with the path to your private key file.
+- `certificate_chain.pem` with the path to your certificate chain file.
 
 
 ## Requirements
