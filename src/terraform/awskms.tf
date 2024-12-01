@@ -78,28 +78,28 @@ resource "aws_kms_key" "s3_kms_key" {
   policy = jsonencode({
     Version = "2012-10-17",
     Id      = "key-s3-policy",
-    Statement: [
+    Statement : [
       {
-        Sid       = "EnableRootPermissions",
-        Effect    = "Allow",
+        Sid    = "EnableRootPermissions",
+        Effect = "Allow",
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         },
-        Action    = "kms:*",
-        Resource  = "*"
+        Action   = "kms:*",
+        Resource = "*"
       },
       {
-        Sid       = "AllowS3Access",
-        Effect    = "Allow",
+        Sid    = "AllowS3Access",
+        Effect = "Allow",
         Principal = {
           AWS = aws_iam_role.ec2_role.arn
         },
-        Action    = [
+        Action = [
           "kms:GenerateDataKey",
           "kms:Decrypt",
           "kms:DescribeKey"
         ],
-        Resource  = "*"
+        Resource = "*"
       }
     ]
   })
@@ -120,28 +120,28 @@ resource "aws_kms_key" "secrets_manager_kms_key" {
   policy = jsonencode({
     Version = "2012-10-17",
     Id      = "key-secrets-manager-policy",
-    Statement: [
+    Statement : [
       {
-        Sid: "EnableRootPermissions",
-        Effect: "Allow",
-        Principal: {
-          AWS: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        Sid : "EnableRootPermissions",
+        Effect : "Allow",
+        Principal : {
+          AWS : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         },
-        Action: "kms:*",
-        Resource: "*"
+        Action : "kms:*",
+        Resource : "*"
       },
       {
-        Sid: "AllowSecretsManagerAccess",
-        Effect: "Allow",
-        Principal: {
-          AWS: aws_iam_role.ec2_role.arn
+        Sid : "AllowSecretsManagerAccess",
+        Effect : "Allow",
+        Principal : {
+          AWS : aws_iam_role.ec2_role.arn
         },
-        Action: [
+        Action : [
           "kms:Decrypt",
           "kms:GenerateDataKey*",
           "kms:DescribeKey"
         ],
-        Resource: "*"
+        Resource : "*"
       }
     ]
   })
@@ -163,26 +163,26 @@ resource "aws_kms_key" "email_secrets_kms_key" {
     Version = "2012-10-17",
     Statement = [
       {
-        Sid       = "EnableRootPermissions",
-        Effect    = "Allow",
+        Sid    = "EnableRootPermissions",
+        Effect = "Allow",
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         },
-        Action    = "kms:*",
-        Resource  = "*"
+        Action   = "kms:*",
+        Resource = "*"
       },
       {
-        Sid       = "AllowLambdaAccess",
-        Effect    = "Allow",
+        Sid    = "AllowLambdaAccess",
+        Effect = "Allow",
         Principal = {
-           AWS: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/sns_lambda_execution_role"
+          AWS : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/sns_lambda_execution_role"
         },
-        Action    = [
+        Action = [
           "kms:GenerateDataKey",
           "kms:Decrypt",
           "kms:DescribeKey"
         ],
-        Resource  = "*"
+        Resource = "*"
       }
     ]
   })

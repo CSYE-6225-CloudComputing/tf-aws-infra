@@ -168,7 +168,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "s3_bucket_encrypt
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm    = "aws:kms"
+      sse_algorithm     = "aws:kms"
       kms_master_key_id = aws_kms_key.s3_kms_key.id
     }
   }
@@ -472,7 +472,7 @@ resource "aws_lb_target_group" "app_target_group" {
 }
 
 data "aws_secretsmanager_secret_version" "db_password_version" {
-  secret_id = aws_secretsmanager_secret.db_password_secret.id
+  secret_id  = aws_secretsmanager_secret.db_password_secret.id
   depends_on = [aws_secretsmanager_secret_version.db_password_version]
 }
 
@@ -486,10 +486,10 @@ resource "aws_launch_template" "csye6225_launch_template" {
   block_device_mappings {
     device_name = "/dev/xvda"
     ebs {
-      volume_size           = var.root_volume_size
-      volume_type           = var.volume_type
-      encrypted             = true
-      kms_key_id            = aws_kms_key.ec2_kms_key.arn
+      volume_size = var.root_volume_size
+      volume_type = var.volume_type
+      encrypted   = true
+      kms_key_id  = aws_kms_key.ec2_kms_key.arn
     }
   }
 
@@ -502,7 +502,7 @@ resource "aws_launch_template" "csye6225_launch_template" {
     associate_public_ip_address = true
     security_groups             = [aws_security_group.application_sg.id]
   }
-  
+
 
 
   user_data = base64encode(<<EOF
@@ -693,7 +693,7 @@ resource "aws_lambda_function" "sns_lambda" {
   timeout     = 60
   filename    = var.filename
 
-   environment {
+  environment {
     variables = {
       EMAIL_CREDENTIALS_SECRET_NAME = var.email_credentials_name
     }
@@ -813,7 +813,7 @@ resource "aws_lb_listener" "https_listener" {
   port              = 443
   protocol          = "HTTPS"
 
-  ssl_policy = "ELBSecurityPolicy-2016-08"
+  ssl_policy      = "ELBSecurityPolicy-2016-08"
   certificate_arn = data.aws_acm_certificate.dev_ssl_certificate.arn
 
   default_action {
