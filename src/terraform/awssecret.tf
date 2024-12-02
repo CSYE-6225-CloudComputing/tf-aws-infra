@@ -29,7 +29,8 @@ resource "aws_iam_policy" "email_service_secrets_policy" {
         Sid    = "AllowSecretsManagerAccess",
         Effect = "Allow",
         Action = [
-          "secretsmanager:*"
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
         ],
         Resource = aws_secretsmanager_secret.email_service_secret.arn
       }
